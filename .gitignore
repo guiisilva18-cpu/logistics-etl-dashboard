@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Segredos locais (credenciais reais, se você for rodar isso de verdade)
+.env
+
+# Saída do seed script fictício
+dashboard/dados_entrada/*.xlsx

@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitoramento de Coleta — NovaRota Ops</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23D6373D'/%3E%3Ctext x='16' y='22' font-family='Arial' font-size='16' font-weight='bold' fill='white' text-anchor='middle'%3ENR%3C/text%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
+
+  :root {
+    /* Conteúdo — fundo claro, texto quase preto (visual "relatório de diretoria") */
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #EEF0F3;
+    --border: #D8DCE3;
+    --text: #1C2333;
+    --text-muted: #6B7280;
+
+    /* Vermelho é só identidade de marca (logo, caminhão) — nunca status */
+    --accent-red: #D6373D;
+    --accent-red-dim: #FBE4E5;
+    /* Amarelo = problema, verde = bom (convenção pedida explicitamente) */
+    --accent-yellow: #B8860B;
+    --accent-yellow-dim: #FBF0D9;
+    --accent-green: #2E7D57;
+    --accent-green-dim: #E1F0E7;
+    --accent-blue: #2E6DA4;
+
+    /* Moldura (header + menu lateral) — cinza escuro, texto branco */
+    --chrome-bg: #383E4A;
+    --chrome-hover-bg: #434A58;
+    --chrome-active-bg: #4E5666;
+    --chrome-border: #454C59;
+    --chrome-text: #F5F6F8;
+    --chrome-text-muted: #A6ACB8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  header {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 18px 28px;
+    background: var(--chrome-bg);
+    border-bottom: 1px solid var(--chrome-border);
+  }
+
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark { height: 34px; width: 34px; border-radius: 6px; background: var(--accent-red); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; flex-shrink: 0; }
+  .brand .divider { width: 1px; height: 24px; background: var(--chrome-border); }
+  .brand h1 { font-size: 15px; font-weight: 500; color: var(--chrome-text); }
+
+  .status-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--chrome-text-muted); }
+
+  .entrega-status { display: flex; align-items: center; gap: 8px; width: 160px; }
+  .entrega-trilha { position: relative; flex: 1; height: 2px; background: var(--chrome-border); border-radius: 2px; }
+  .entrega-caminhao {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    animation: entregar 3.2s ease-in-out infinite;
+  }
+  @keyframes entregar {
+    0%   { left: 0; opacity: 0; }
+    8%   { opacity: 1; }
+    88%  { left: calc(100% - 30px); opacity: 1; }
+    100% { left: calc(100% - 30px); opacity: 0; }
+  }
+  .entrega-destino { width: 9px; height: 9px; background: var(--accent-red); border-radius: 2px; flex-shrink: 0; }
+
+  .layout { display: flex; min-height: calc(100vh - 70px); }
+
+  nav.sidebar {
+    width: 230px;
+    flex-shrink: 0;
+    background: var(--chrome-bg);
+    border-right: 1px solid var(--chrome-border);
+    padding: 18px 12px;
+  }
+  nav.sidebar .grupo-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--chrome-text-muted);
+    padding: 6px 10px;
+    margin-top: 10px;
+  }
+  nav.sidebar button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--chrome-text);
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    cursor: pointer;
+    margin-bottom: 2px;
+  }
+  nav.sidebar button:hover { background: var(--chrome-hover-bg); color: var(--chrome-text); }
+  nav.sidebar button.ativo { background: var(--chrome-active-bg); color: #FFFFFF; font-weight: 600; }
+  nav.sidebar button .contagem { float: right; color: var(--chrome-text-muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+  nav.sidebar button.ativo .contagem { color: var(--accent-red); }
+
+  main { flex: 1; padding: 24px 28px 60px; overflow-x: hidden; }
+
+  select {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+
+  .btn-pill {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn-pill:hover { border-color: var(--accent-yellow); color: var(--accent-yellow); }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 3px rgba(28, 35, 51, 0.08);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(28, 35, 51, 0.12); }
+  .kpi .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .cn {
+    display: block;
+    font-size: 13px;
+    color: var(--accent-red);
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0.04em;
+    margin-top: 4px;
+    opacity: 0.9;
+  }
+  .kpi .value { font-family: 'IBM Plex Mono', monospace; font-size: 30px; font-weight: 600; line-height: 1; }
+  .kpi .sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .kpi.red .value { color: var(--accent-red); }
+  .kpi.yellow .value { color: var(--accent-yellow); }
+  .kpi.green .value { color: var(--accent-green); }
+  .kpi.blue .value { color: var(--accent-blue); }
+  td.nome-pessoa { text-transform: none; }
+
+  .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid.wrap-3 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(28, 35, 51, 0.06);
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 16px; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); text-transform: uppercase; letter-spacing: 0.03em; }
+  td { padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; }
+  td.num { font-family: 'IBM Plex Mono', monospace; text-align: right; }
+  tfoot td { text-transform: uppercase; }
+  .tabela-scroll { max-height: 420px; overflow: auto; }
+
+  .pendente-badge {
+    display: inline-block;
+    background: var(--accent-yellow-dim);
+    color: #8A6510;
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+  .ok-badge {
+    display: inline-block;
+    background: var(--accent-green-dim);
+    color: var(--accent-green);
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+
+  .aviso {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+  }
+
+  .banner-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-green);
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 13px;
+    margin-bottom: 18px;
+    cursor: pointer;
+  }
+  .banner-status.risco { border-left-color: var(--accent-yellow); }
+  .banner-status .ponto { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-green); flex-shrink: 0; }
+  .banner-status.risco .ponto { background: var(--accent-yellow); }
+  .banner-status b { color: var(--text); }
+
+  .delta { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; margin-top: 4px; }
+  .delta.bom { color: var(--accent-green); }
+  .delta.ruim { color: var(--accent-yellow); }
+  .delta.neutro { color: var(--text-muted); }
+
+  .kpi-clicavel { cursor: pointer; border: 1px solid var(--accent-yellow) !important; transition: background 0.15s; }
+  .kpi-clicavel:hover { background: var(--accent-yellow-dim); }
+  .red-text { color: var(--accent-red); }
+  .yellow-text { color: var(--accent-yellow); }
+  .kpi.previsao { border: 1px dashed var(--accent-blue); background: rgba(46,109,164,0.08); }
+  .kpi.previsao .value { color: var(--accent-blue); }
+
+  /* Modal */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:1000; align-items:center; justify-content:center; }
+  .modal-overlay.aberto { display:flex; }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; width:min(90vw,960px); max-height:85vh; overflow:auto; position:relative; }
+  .modal-box h2 { margin-bottom:16px; }
+  .modal-fechar { position:absolute; top:16px; right:20px; background:none; border:none; color:var(--text-muted); font-size:22px; cursor:pointer; line-height:1; }
+  .modal-fechar:hover { color:var(--text); }
+
+  .empty-state { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+  .empty-state h2 { color: var(--text); margin-bottom: 8px; font-size: 18px; }
+
+  .loading-state { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+  .loading-spinner {
+    display: inline-block;
+    width: 30px; height: 30px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent-red);
+    border-radius: 50%;
+    margin-bottom: 16px;
+    animation: girar 0.8s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  canvas { max-height: 280px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">NR</div>
+    <div class="divider"></div>
+    <div>
+      <h1>Painel de Relatórios</h1>
+      <span class="cn" style="font-size:12px; margin-top:2px; opacity:0.7;">报告面板</span>
+    </div>
+  </div>
+  <div id="titulo-tela" style="position:absolute; left:50%; transform:translateX(-50%); text-align:center;">
+    <div style="font-size:20px; font-weight:700; color:#fff; letter-spacing:0.05em;">Visão Geral</div>
+    <div style="font-size:13px; color:var(--accent-red); font-weight:600; margin-top:2px;">总览</div>
+  </div>
+  <div class="status-row">
+    <div class="entrega-status" title="Carga diária: dados de ontem, atualizados de manhã">
+      <div class="entrega-trilha">
+        <svg class="entrega-caminhao" width="30" height="16" viewBox="0 0 34 18">
+          <!-- linhas de velocidade -->
+          <rect x="5" y="3" width="8" height="2" rx="1" fill="var(--accent-red)"/>
+          <rect x="1" y="7" width="12" height="2" rx="1" fill="var(--accent-red)"/>
+          <rect x="6" y="11" width="7" height="2" rx="1" fill="var(--accent-red)"/>
+          <!-- caçamba (frente inclinada) -->
+          <path d="M16 2 L26 2 L26 14 L14 14 L14 7 Z" fill="var(--accent-red)"/>
+          <!-- cabine -->
+          <path d="M26 8 L30 8 L33 11.2 L33 14 L26 14 Z" fill="var(--accent-red)"/>
+          <path d="M27.4 9.2 L29.6 9.2 L31.5 11.4 L27.4 11.4 Z" fill="#FFFFFF"/>
+          <!-- rodas -->
+          <circle cx="19" cy="15.3" r="2.3" fill="var(--accent-red)"/>
+          <circle cx="19" cy="15.3" r="0.9" fill="#FFFFFF"/>
+          <circle cx="29" cy="15.3" r="2.3" fill="var(--accent-red)"/>
+          <circle cx="29" cy="15.3" r="0.9" fill="#FFFFFF"/>
+        </svg>
+      </div>
+      <span class="entrega-destino"></span>
+    </div>
+    <a href="{{ url_for('auth.logout') }}" style="color:var(--chrome-text-muted); text-decoration:none; border:1px solid var(--chrome-border); border-radius:6px; padding:5px 10px;">Sair</a>
+  </div>
+</header>
+
+<!-- MODAL % Falta de Bipagem -->
+<div class="modal-overlay" id="modal-falta">
+  <div class="modal-box">
+    <button class="modal-fechar" id="modal-fechar">✕</button>
+    <h2>% Falta de Bipagem — Detalhe por PA<span class="cn" style="font-size:14px">按基地未扫率</span></h2>
+    <div id="modal-conteudo"><div class="loading-state"><div class="loading-spinner"></div><p>Carregando...</p></div></div>
+  </div>
+</div>
+
+<!-- MODAL Comparativo Semanal -->
+<div class="modal-overlay" id="modal-semanal">
+  <div class="modal-box">
+    <button class="modal-fechar" id="modal-semanal-fechar">✕</button>
+    <h2>Comparativo Semanal<span class="cn" style="font-size:14px">周对比</span></h2>
+    <div id="modal-semanal-conteudo"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <button data-tipo="__visao_geral__" class="ativo">Visão Geral<span class="cn" style="font-size:11px">总览</span></button>
+    <button data-tipo="__kpis_pa__">KPIs por PA<span class="cn" style="font-size:11px">按基地KPI</span></button>
+    {% if pode_ver_colaboradores %}
+    <button data-tipo="__colaboradores__">Desempenho por Colaborador<span class="cn" style="font-size:11px">员工绩效</span></button>
+    {% endif %}
+    <div id="lista-tipos" style="display:none"></div>
+  </nav>
+
+  <main id="main-content">
+    <div class="loading-state"><div class="loading-spinner"></div><p>Carregando...</p></div>
+  </main>
+</div>
+
+<script>
+const CHART_DISPONIVEL = typeof Chart !== 'undefined';
+
+let TIPO_ATUAL = '__visao_geral__';
+let intervaloMs = 20000;
+let dataSelecionadaManualmente = null;
+let colaboradorSelecionado = null;
+let paSelecionada = null;
+let charts = {};
+let timeoutId = null;
+let requisicaoAtual = 0;
+let ultimoComparativoSemanal = null;
+
+// Paleta única de cores — lida direto das variáveis CSS (:root), pra não
+// ter hex espalhado/duplicado em cada função de gráfico.
+function corCss(nomeVar) {
+  return getComputedStyle(document.documentElement).getPropertyValue(nomeVar).trim();
+}
+const CORES = {
+  vermelho: corCss('--accent-red'),
+  verde: corCss('--accent-green'),
+  azul: corCss('--accent-blue'),
+  amarelo: corCss('--accent-yellow'),
+  roxo: '#4A3AA7',
+  ciano: '#1BAF7A',
+  rosa: '#E87BA4',
+  cinza: corCss('--text-muted'),
+  verdeClaro: '#EB6834',
+  amareloClaro: '#EDA100',
+  grid: corCss('--border'),
+  texto: corCss('--text'),
+  // Rótulo de dado desenhado sobre/perto da barra (fundo claro) — precisa
+  // ser tinta escura, não branco (era branco quando o fundo do gráfico era
+  // escuro).
+  rotulo: corCss('--text'),
+};
+CORES.paleta = [CORES.vermelho, CORES.verde, CORES.azul, CORES.amarelo, CORES.roxo, CORES.ciano, CORES.rosa, CORES.cinza, CORES.verdeClaro, CORES.amareloClaro];
+
+function formatNum(n) { return new Intl.NumberFormat('pt-BR').format(n); }
+
+// Selo de variação vs dia anterior pros KPIs principais — subeEBom=true
+// quando um valor maior é uma coisa boa (ex: pacotes coletados), false
+// quando um valor maior é problema (ex: sem coleta, % falta). null quando
+// não há dia anterior pra comparar (ex: primeiro dia do histórico ou
+// visão "Todos os dias" somada).
+function deltaHtml(valor, sufixo, subeEBom, rotuloComparacao) {
+  const rotulo = rotuloComparacao || 'dia anterior';
+  if (valor === null || valor === undefined) return '';
+  if (valor === 0) return `<div class="delta neutro">= vs ${rotulo}</div>`;
+  const subiu = valor > 0;
+  const seta = subiu ? '▲' : '▼';
+  const bom = subiu === subeEBom;
+  return `<div class="delta ${bom ? 'bom' : 'ruim'}">${seta} ${Math.abs(valor).toFixed(1)}${sufixo} vs ${rotulo}</div>`;
+}
+
+function estadoCarregando(mensagem) {
+  return `<div class="loading-state"><div class="loading-spinner"></div><p>${mensagem || 'Carregando...'}</p></div>`;
+}
+
+function destruirCharts() {
+  Object.values(charts).forEach(c => c && c.destroy());
+  charts = {};
+}
+
+async function carregarSidebar() {
+  const resp = await fetch('/api/tipos');
+  const json = await resp.json();
+  if (json.erro) return;
+  intervaloMs = (json.intervalo_atualizacao_segundos || 20) * 1000;
+}
+
+function marcarAtivo(tipo) {
+  document.querySelectorAll('nav.sidebar button').forEach(b => {
+    b.classList.toggle('ativo', b.dataset.tipo === tipo);
+  });
+}
+
+const TITULOS_TELAS = {
+  '__visao_geral__':   { pt: 'Indicadores de PA',                cn: '按基地指标' },
+  '__kpis_pa__':       { pt: 'Indicadores de PA',          cn: '按基地指标' },
+  '__colaboradores__': { pt: 'Indicadores de PA', cn: '按基地指标' },
+};
+
+function atualizarTituloTela(tipo) {
+  const t = TITULOS_TELAS[tipo] || { pt: '', cn: '' };
+  const el = document.getElementById('titulo-tela');
+  if (el) {
+    el.innerHTML = `
+      <div style="font-size:20px; font-weight:700; color:#fff; letter-spacing:0.05em;">${t.pt}</div>
+      <div style="font-size:13px; color:var(--accent-red); font-weight:600; margin-top:2px;">${t.cn}</div>
+    `;
+  }
+}
+
+function selecionarTipo(tipo) {
+  TIPO_ATUAL = tipo;
+  dataSelecionadaManualmente = null;
+  colaboradorSelecionado = null;
+  paSelecionada = null;
+  marcarAtivo(tipo);
+  atualizarTituloTela(tipo);
+  atualizarConteudo();
+}
+
+// querySelector pode não achar o botão de colaboradores (fica de fora
+// do HTML pra quem não tem permissão) — por isso o "?." em cada um.
+document.querySelector('[data-tipo="__visao_geral__"]')?.addEventListener('click', () => selecionarTipo('__visao_geral__'));
+document.querySelector('[data-tipo="__kpis_pa__"]')?.addEventListener('click', () => selecionarTipo('__kpis_pa__'));
+document.querySelector('[data-tipo="__colaboradores__"]')?.addEventListener('click', () => selecionarTipo('__colaboradores__'));
+
+// ---------------------------------------------------------------
+// VISÃO GERAL (todos os relatórios, agregados por Base)
+// ---------------------------------------------------------------
+function renderVisaoGeral(d) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>${d.erro}</h2></div>`; return; }
+  if (!d.tipos || d.tipos.length === 0 || !d.por_base || d.por_base.length === 0) {
+    main.innerHTML = `<div class="empty-state"><h2>Sem dados ainda</h2><p>Baixe relatórios e salve na pasta configurada — eles aparecem aqui automaticamente.</p></div>`;
+    return;
+  }
+
+  const colunasTipo = d.tipos.map(t => `<th>${t.nome_exibicao}</th>`).join('');
+
+  function linhaTabela(item) {
+    const cols = d.tipos.map(t => `<td class="num">${item.por_tipo[t.tipo] ? formatNum(item.por_tipo[t.tipo]) : '—'}</td>`).join('');
+    return `<tr><td>${item.nome}</td><td class="num"><b>${formatNum(item.total)}</b></td>${cols}</tr>`;
+  }
+
+  main.innerHTML = `
+    <div class="kpis">
+      <div class="kpi blue"><div class="label">Total de Registros<span class="cn">总记录数</span></div><div class="value">${formatNum(d.total_geral)}</div></div>
+      <div class="kpi"><div class="label">Bases Ativas<span class="cn">活跃基地</span></div><div class="value">${formatNum(d.total_bases)}</div></div>
+      <div class="kpi green"><div class="label">Tipos de Relatório<span class="cn">报告类型</span></div><div class="value">${d.tipos.length}</div></div>
+    </div>
+    <div class="panel"><h2>Volume por Base<span class="cn">按基地量</span></h2><div style="position:relative; height:${Math.max(320, d.por_base.length * 30)}px"><canvas id="chart-vg-barras" height="${Math.max(320, d.por_base.length * 30)}" style="max-height:none"></canvas></div></div>
+    <div class="panel">
+      <h2>Detalhamento por Base<span class="cn">各基地详情</span></h2>
+      <div class="tabela-scroll">
+        <table>
+          <thead><tr><th>Base<span class="cn">基地</span></th><th style="text-align:right">Total<span class="cn">总计</span></th>${colunasTipo}</tr></thead>
+          <tbody>${d.por_base.map(linhaTabela).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  const labels = d.por_base.map((b, i) => `${i + 1}. ${(b.nome || '').toUpperCase()}`);
+  destruirCharts();
+  charts.vgBarras = new Chart(document.getElementById('chart-vg-barras'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: d.por_base.map(b => b.total), backgroundColor: CORES.azul, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+      plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
+// ---------------------------------------------------------------
+// VISÃO ESPECÍFICA: Monitoramento de Bipagem de Coleta
+// ---------------------------------------------------------------
+function renderBipagemColeta(d) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>Erro</h2><p>${d.erro}</p></div>`; return; }
+  if (d.total_remessas === 0) {
+    main.innerHTML = `<div class="empty-state"><h2>Sem dados ainda</h2><p>Nenhum relatório encontrado ainda.</p></div>`;
+    return;
+  }
+
+  const seletorHtml = `<select id="seletor-data"></select>`;
+
+  main.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">${seletorHtml}</div>
+    <div class="kpis">
+      <div class="kpi blue"><div class="label">Total de Remessas<span class="cn">快件总数</span></div><div class="value" id="kpi-total">0</div><div class="sub" id="kpi-total-hist"></div></div>
+      <div class="kpi green"><div class="label">Coletadas<span class="cn">集</span></div><div class="value" id="kpi-coletadas">0</div><div class="sub" id="kpi-coletadas-pct"></div></div>
+      <div class="kpi yellow"><div class="label">Sem Bip de Coleta<span class="cn">未收件</span></div><div class="value" id="kpi-nao-coletados">0</div></div>
+      <div class="kpi"><div class="label">Despachadas<span class="cn">已发件</span></div><div class="value" id="kpi-despachadas">0</div><div class="sub" id="kpi-despachadas-pct"></div></div>
+      <div class="kpi"><div class="label">Bases Ativas<span class="cn">活跃基地</span></div><div class="value" id="kpi-bases">0</div></div>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Remessas por Base<span class="cn">按基地快件数</span></h2><div style="position:relative; height:${Math.max(320, d.por_base.length * 30)}px"><canvas id="chart-base" height="${Math.max(320, d.por_base.length * 30)}" style="max-height:none"></canvas></div></div>
+      <div class="panel"><h2>Coleta ao longo do dia (por hora)<span class="cn">每小时揽收情况</span></h2><canvas id="chart-hora"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Bases com mais Não Coletados<span class="cn">未收件最多的基地</span></h2>
+      <table>
+        <thead><tr><th>Base<span class="cn">基地</span></th></tr></thead>
+        <tbody id="tabela-nao-coletados"></tbody>
+      </table>
+    </div>
+  `;
+
+  const seletor = document.getElementById('seletor-data');
+  seletor.innerHTML = d.datas_disponiveis.map(dt =>
+    `<option value="${dt}" ${dt === d.data_selecionada ? 'selected' : ''}>${dt}</option>`).join('');
+  seletor.addEventListener('change', (e) => {
+    dataSelecionadaManualmente = e.target.value;
+    atualizarConteudo();
+  });
+
+  document.getElementById('kpi-total').textContent = formatNum(d.total_remessas);
+  document.getElementById('kpi-total-hist').textContent = `${formatNum(d.total_geral_historico)} no histórico`;
+  document.getElementById('kpi-coletadas').textContent = formatNum(d.total_coletados);
+  document.getElementById('kpi-coletadas-pct').textContent = `${d.pct_coletado}%`;
+  document.getElementById('kpi-nao-coletados').textContent = formatNum(d.total_nao_coletados);
+  document.getElementById('kpi-despachadas').textContent = formatNum(d.total_despachados);
+  document.getElementById('kpi-despachadas-pct').textContent = `${d.pct_despachado}%`;
+  document.getElementById('kpi-bases').textContent = formatNum(d.total_bases);
+
+  document.getElementById('tabela-nao-coletados').innerHTML = d.top_nao_coletados_base.map(b =>
+    `<tr><td>${b.base}</td><td class="num"><span class="pendente-badge">${formatNum(b.nao_coletados)}</span></td></tr>`
+  ).join('') || '<tr><td colspan="2">Nenhum não coletado 🎉</td></tr>';
+
+  destruirCharts();
+  charts.base = new Chart(document.getElementById('chart-base'), {
+    type: 'bar',
+    data: {
+      labels: d.por_base.map((b, i) => `${i + 1}. ${(b.base || '').toUpperCase()}`),
+      datasets: [
+        { label: 'Coletadas 集', data: d.por_base.map(b => b.coletados), backgroundColor: CORES.verde, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 },
+        { label: 'Não Coletado 未收件', data: d.por_base.map(b => b.nao_coletados), backgroundColor: CORES.amarelo, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: {
+        x: { stacked: true, grid: { color: CORES.grid }, ticks: { color: CORES.cinza } },
+        y: { stacked: true, grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } },
+      },
+      plugins: { legend: { labels: { color: CORES.cinza } } }
+    }
+  });
+
+  charts.hora = new Chart(document.getElementById('chart-hora'), {
+    type: 'line',
+    data: {
+      labels: d.por_hora.map(h => `${String(h.hora).padStart(2, '00')}h`),
+      datasets: [
+        { label: 'Coletadas 集', data: d.por_hora.map(h => h.coletados), borderColor: CORES.verde, backgroundColor: 'rgba(43,217,160,0.12)', fill: true, tension: 0.3 },
+        { label: 'Total 总数', data: d.por_hora.map(h => h.total), borderColor: CORES.azul, backgroundColor: 'rgba(77,141,255,0.08)', fill: true, tension: 0.3 },
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { grid: { display: false }, ticks: { color: CORES.cinza } },
+        y: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } },
+      },
+      plugins: { legend: { labels: { color: CORES.cinza } } }
+    }
+  });
+}
+
+// ---------------------------------------------------------------
+// VISÃO GENÉRICA (qualquer relatório ainda não customizado)
+// ---------------------------------------------------------------
+function renderGenerico(d, nomeExibicao) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>Erro</h2><p>${d.erro}</p></div>`; return; }
+  if (d.total_linhas === 0) {
+    main.innerHTML = `<div class="empty-state"><h2>Sem dados ainda</h2><p>Nenhum arquivo desse tipo encontrado na pasta ainda.</p></div>`;
+    return;
+  }
+
+  const graficosHtml = Object.keys(d.distribuicoes || {}).map(col =>
+    `<div class="panel"><h2>${col}</h2><canvas id="chart-${cssEscape(col)}"></canvas></div>`
+  ).join('');
+
+  const timelineHtml = d.timeline ? `<div class="panel"><h2>Evolução por dia</h2><canvas id="chart-timeline"></canvas></div>` : '';
+
+  const colunasPreview = d.colunas.slice(0, 8);
+  const tabelaHtml = `
+    <div class="panel">
+      <h2>Amostra dos dados (${formatNum(Math.min(50, d.total_linhas))} de ${formatNum(d.total_linhas)} linhas)</h2>
+      <div class="tabela-scroll">
+        <table>
+          <thead><tr>${colunasPreview.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${d.preview.map(row => `<tr>${colunasPreview.map(c => `<td>${row[c] ?? ''}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  main.innerHTML = `
+    <div class="aviso">Este relatório ainda não tem KPIs customizados — mostrando uma visão automática baseada nas colunas detectadas. Me diga o que você quer ver e eu customizo essa aba.</div>
+    <div class="kpis">
+      <div class="kpi blue"><div class="label">Total de linhas</div><div class="value">${formatNum(d.total_linhas)}</div></div>
+      <div class="kpi"><div class="label">Colunas</div><div class="value">${d.colunas.length}</div></div>
+    </div>
+    <div class="grid wrap-3">${graficosHtml}${timelineHtml}</div>
+    ${tabelaHtml}
+  `;
+
+  destruirCharts();
+  const cores = CORES.paleta;
+  Object.entries(d.distribuicoes || {}).forEach(([col, valores], i) => {
+    const canvas = document.getElementById(`chart-${cssEscape(col)}`);
+    if (!canvas) return;
+    charts[col] = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: valores.map(v => (v.valor || '').toUpperCase()),
+        datasets: [{ label: col, data: valores.map(v => v.total), backgroundColor: cores[i % cores.length], borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, indexAxis: 'y',
+        scales: {
+          x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } },
+          y: { grid: { display: false }, ticks: { color: CORES.texto } },
+        },
+        plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+      },
+      plugins: [ChartDataLabels]
+    });
+  });
+
+  if (d.timeline) {
+    charts.timeline = new Chart(document.getElementById('chart-timeline'), {
+      type: 'line',
+      data: {
+        labels: d.timeline.map(t => t._dia),
+        datasets: [{ label: 'Registros', data: d.timeline.map(t => t.total), borderColor: CORES.azul, backgroundColor: 'rgba(77,141,255,0.08)', fill: true, tension: 0.3 }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { grid: { display: false }, ticks: { color: CORES.cinza } },
+          y: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } },
+        },
+        plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+      },
+      plugins: [ChartDataLabels]
+    });
+  }
+}
+
+// ---------------------------------------------------------------
+// DESEMPENHO POR COLABORADOR (filtro por pessoa + ranking geral)
+// Base vem direto do relatório de coleta, sem cadastro externo.
+// ---------------------------------------------------------------
+function renderColaboradores(d) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>${d.erro}</h2></div>`; return; }
+  if (!d.colaboradores_disponiveis || d.colaboradores_disponiveis.length === 0) {
+    main.innerHTML = `<div class="empty-state"><h2>Sem dados ainda</h2><p>Assim que o relatório de coleta tiver colaboradores identificados, eles aparecem aqui automaticamente.</p></div>`;
+    return;
+  }
+
+
+  const opcoesColaborador = `<option value="">— Todos (ranking) —</option>` +
+    d.colaboradores_disponiveis.map(c =>
+      `<option value="${c.nome_normalizado}" ${c.nome_normalizado === colaboradorSelecionado ? 'selected' : ''}>${c.nome}</option>`).join('');
+
+  const opcoesPA = `<option value="">— Todas as PAs —</option>` +
+    (d.pas_disponiveis || []).map(pa =>
+      `<option value="${pa}" ${pa === paSelecionada ? 'selected' : ''}>${pa.toUpperCase()}</option>`).join('');
+
+  const filtroHtml = `<select id="seletor-pa-colab">${opcoesPA}</select><select id="seletor-colaborador">${opcoesColaborador}</select>`;
+
+  if (d.modo === 'detalhe' && !d.encontrado) {
+    main.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">${filtroHtml}</div>
+      <div class="empty-state"><h2>Sem dados</h2><p>Esse colaborador não tem remessas registradas${paSelecionada ? ' nessa PA' : ''}.</p></div>
+    `;
+    document.getElementById('seletor-pa-colab').addEventListener('change', (e) => {
+      paSelecionada = e.target.value || null;
+      atualizarConteudo();
+    });
+    document.getElementById('seletor-colaborador').addEventListener('change', (e) => {
+      colaboradorSelecionado = e.target.value || null;
+      atualizarConteudo();
+    });
+    return;
+  }
+
+  if (d.modo === 'detalhe' && d.encontrado) {
+    const r = d.resumo;
+    const seletorDataColabHtml = `<select id="seletor-data-detalhe"><option value="">— Todos os dias —</option>${
+      (d.datas_disponiveis || []).map(dt => `<option value="${dt}" ${dt === d.data_selecionada ? 'selected' : ''}>${dt}</option>`).join('')
+    }</select>`;
+
+    main.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">${seletorDataColabHtml}${filtroHtml}</div>
+      <div class="kpis">
+        <div class="kpi blue"><div class="label">Pacotes Bipados (Total)<span class="cn">集</span></div><div class="value">${formatNum(r.total_pacotes_bipados)}</div></div>
+        <div class="kpi yellow"><div class="label">Sem Coleta<span class="cn">未扫描</span></div><div class="value">${formatNum(r.nao_coletados)}</div></div>
+        <div class="kpi"><div class="label">% Falta de Bipagem<span class="cn">未扫率</span></div><div class="value">${r.pct_falta_bipagem.toFixed(2)}%</div></div>
+        <div class="kpi"><div class="label">Dias Trabalhados<span class="cn">工作天数</span></div><div class="value">${formatNum(r.dias_trabalhados)}</div></div>
+        <div class="kpi green"><div class="label">Média Pacotes/Dia<span class="cn">日均揽收量</span></div><div class="value">${formatNum(r.media_pacotes_dia)}</div></div>
+        <div class="kpi"><div class="label">Custo Total<span class="cn">总成本</span></div><div class="value mono" style="font-size:22px">R$ ${formatNum(r.custo_total)}</div></div>
+        <div class="kpi"><div class="label">Custo Médio/Pacote<span class="cn">人工成本</span></div><div class="value mono" style="font-size:22px">R$ ${r.custo_medio_por_pacote.toFixed(4)}</div></div>
+      </div>
+      <div class="aviso">Melhor dia: ${r.melhor_dia.data} com ${formatNum(r.melhor_dia.pacotes)} pacotes bipados. Base principal: ${(d.base_principal || '—').toUpperCase()}.</div>
+      <div class="grid">
+        <div class="panel"><h2>Pacotes Bipados por Dia<span class="cn">每日揽收量</span></h2><canvas id="chart-colab-dia"></canvas></div>
+        <div class="panel"><h2>Distribuição por Base<span class="cn">各基地分布</span></h2><canvas id="chart-colab-base"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Histórico Diário<span class="cn">每日记录</span></h2>
+        <div class="tabela-scroll">
+          <table>
+            <thead><tr>
+              <th>Data<span class="cn">日期</span></th>
+              <th style="text-align:right">Pacotes Bipados<span class="cn">集</span></th>
+              <th style="text-align:right">Custo do Dia<span class="cn">每日成本</span></th>
+              <th style="text-align:right">Custo Mão de Obra Pacote<span class="cn">人工成本</span></th>
+            </tr></thead>
+            <tbody>${d.por_dia.map(p => `
+              <tr><td>${p.data}</td><td class="num"><b>${formatNum(p.pacotes_bipados)}</b></td><td class="num">R$ ${p.custo_dia.toFixed(2)}</td><td class="num">R$ ${p.custo_por_pacote.toFixed(2)}</td></tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('seletor-data-detalhe').addEventListener('change', (e) => {
+      dataSelecionadaManualmente = e.target.value || null;
+      atualizarConteudo();
+    });
+
+    destruirCharts();
+    charts.colabDia = new Chart(document.getElementById('chart-colab-dia'), {
+      type: 'bar',
+      data: { labels: d.por_dia.map(p => p.data), datasets: [{ data: d.por_dia.map(p => p.pacotes_bipados), backgroundColor: CORES.verde, borderRadius: 4 }] },
+      options: {
+        responsive: true,
+        scales: { x: { grid: { display: false }, ticks: { color: CORES.cinza } }, y: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } } },
+        plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+      },
+      plugins: [ChartDataLabels]
+    });
+    charts.colabBase = new Chart(document.getElementById('chart-colab-base'), {
+      type: 'pie',
+      data: { labels: d.bases.map((b, i) => `${i + 1}. ${(b.base || '').toUpperCase()}`), datasets: [{ data: d.bases.map(b => b.pacotes_bipados), backgroundColor: CORES.paleta }] },
+      options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: CORES.cinza, boxWidth: 12, font: { size: 11 } } } } }
+    });
+
+  } else {
+    if (!d.datas_disponiveis || d.datas_disponiveis.length === 0) {
+      main.innerHTML = `<div class="empty-state"><h2>Sem dados ainda</h2></div>`;
+      return;
+    }
+    const seletorDataHtml = `<select id="seletor-data-colab"><option value="todos" ${d.data_selecionada === 'todos' ? 'selected' : ''}>— Todos os dias (somado) —</option>${d.datas_disponiveis.map(dt =>
+      `<option value="${dt}" ${dt === d.data_selecionada ? 'selected' : ''}>${dt}</option>`).join('')}</select>`;
+
+    const top10 = d.linhas.slice(0, 10);
+
+    main.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">${seletorDataHtml}${filtroHtml}</div>
+      <div class="kpis">
+        <div class="kpi blue"><div class="label">Colaboradores no Dia<span class="cn">工作人员</span></div><div class="value">${formatNum(d.total_colaboradores)}</div></div>
+        <div class="kpi green"><div class="label">Pacotes Bipados<span class="cn">集</span></div><div class="value">${formatNum(d.total_pacotes)}</div></div>
+        <div class="kpi yellow"><div class="label">Sem Coleta<span class="cn">未扫描</span></div><div class="value">${formatNum(d.total_nao_coletados)}</div></div>
+        <div class="kpi"><div class="label">% Falta de Bipagem<span class="cn">未扫率</span></div><div class="value">${d.pct_falta_bipagem.toFixed(2)}%</div></div>
+        <div class="kpi"><div class="label">Média por Colaborador<span class="cn">日均揽收量</span></div><div class="value">${d.total_colaboradores ? formatNum(Math.round(d.total_pacotes / d.total_colaboradores)) : 0}</div></div>
+      </div>
+      <div class="panel"><h2>Top 10 — Pacotes Bipados<span class="cn">前10名 揽收量</span></h2><div style="position:relative; height:${Math.max(320, top10.length * 30)}px"><canvas id="chart-colab-top" height="${Math.max(320, top10.length * 30)}" style="max-height:none"></canvas></div></div>
+      <div class="panel">
+        <h2>Ranking de Desempenho<span class="cn">绩效排名</span></h2>
+        <div class="tabela-scroll">
+          <table>
+            <thead><tr>
+              <th>Colaborador<span class="cn">工作人员</span></th>
+              <th>Base<span class="cn">基地</span></th>
+              <th style="text-align:right">Pacotes Bipados<span class="cn">集</span></th>
+              <th style="text-align:right">Sem Coleta (PA)<span class="cn">未扫描</span></th>
+              <th style="text-align:right">% Falta Bipagem<span class="cn">未扫率</span></th>
+              <th style="text-align:right">Custo do Dia<span class="cn">每日成本</span></th>
+              <th style="text-align:right">Custo Mão de Obra Pacote<span class="cn">人工成本</span></th>
+            </tr></thead>
+            <tbody>
+              ${d.linhas.map(l => `
+                <tr>
+                  <td class="nome-pessoa">${l.nome}</td>
+                  <td>${l.base}</td>
+                  <td class="num"><b>${formatNum(l.pacotes_bipados)}</b></td>
+                  <td class="num">${l.nao_bipados > 0 ? `<span class="pendente-badge">${formatNum(l.nao_bipados)}</span>` : formatNum(l.nao_bipados)}</td>
+                  <td class="num">${l.pct_falta_bipagem.toFixed(2)}%</td>
+                  <td class="num">R$ ${l.custo_dia.toFixed(2)}</td>
+                  <td class="num">R$ ${l.custo_por_pacote.toFixed(2)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('seletor-data-colab').addEventListener('change', (e) => {
+      dataSelecionadaManualmente = e.target.value;
+      atualizarConteudo();
+    });
+
+    destruirCharts();
+    charts.colabTop = new Chart(document.getElementById('chart-colab-top'), {
+      type: 'bar',
+      data: { labels: top10.map((l, i) => `${i + 1}. ${l.nome.toUpperCase()}`), datasets: [{ data: top10.map(l => l.pacotes_bipados), backgroundColor: CORES.verde, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+        plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+      },
+      plugins: [ChartDataLabels]
+    });
+  }
+
+  document.getElementById('seletor-pa-colab').addEventListener('change', (e) => {
+    paSelecionada = e.target.value || null;
+    atualizarConteudo();
+  });
+
+  document.getElementById('seletor-colaborador').addEventListener('change', (e) => {
+    colaboradorSelecionado = e.target.value || null;
+    atualizarConteudo();
+  });
+}
+
+// ---------------------------------------------------------------
+// KPIs POR PA (Coletado, CLT, Eficiência, Custos — barras e pizza)
+// ---------------------------------------------------------------
+function renderKpisPA(d) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>Erro</h2><p>${d.erro}</p></div>`; return; }
+
+  const opcoesPA = `<option value="">— Todas as PAs —</option>` +
+    (d.pas_disponiveis || []).map(pa =>
+      `<option value="${pa}" ${pa === paSelecionada ? 'selected' : ''}>${pa.toUpperCase()}</option>`).join('');
+  const seletorPaHtml = `<select id="seletor-pa-kpi">${opcoesPA}</select>`;
+
+  if (!d.linhas || d.linhas.length === 0) {
+    main.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">${seletorPaHtml}</div>
+      <div class="empty-state"><h2>Sem dados ainda</h2><p>${paSelecionada ? 'Nenhum dado para essa PA na data selecionada.' : 'Assim que houver relatório de coleta processado, os KPIs por PA aparecem aqui.'}</p></div>
+    `;
+    document.getElementById('seletor-pa-kpi').addEventListener('change', (e) => {
+      paSelecionada = e.target.value || null;
+      atualizarConteudo();
+    });
+    return;
+  }
+
+  const tg = d.total_geral;
+  const seletorDataHtml = `<select id="seletor-data-pa"></select>`;
+
+  const linhasTabela = d.linhas.map(l => `
+    <tr>
+      <td>${l.pa}${l.dias_consecutivos_risco > 0 ? ` <span class="pendente-badge" title="${l.dias_consecutivos_risco} dias seguidos acima da meta">⚠ ${l.dias_consecutivos_risco}d</span>` : ''}</td>
+      <td class="nome-pessoa">${l.lider}</td>
+      <td class="num">${formatNum(l.pacotes_coletados)}</td>
+      <td class="num"><span class="pendente-badge">${formatNum(l.nao_coletados)}</span></td>
+      <td class="num">${l.pct_falta_bipagem.toFixed(2)}%</td>
+      <td class="num">${formatNum(l.clt)}</td>
+      <td class="num">${formatNum(l.diaristas)}</td>
+      <td class="num">${formatNum(l.total_hc)}</td>
+      <td class="num">${l.eficiencia !== null ? formatNum(l.eficiencia) : '—'}</td>
+      <td class="num">R$ ${formatNum(l.custo_clt)}</td>
+      <td class="num">R$ ${formatNum(l.custo_diarista)}</td>
+      <td class="num"><b>R$ ${formatNum(l.custo_total)}</b></td>
+      <td class="num">R$ ${l.custo_por_pacote.toFixed(2)}</td>
+    </tr>`).join('');
+
+  const riscoCount = (d.pas_em_risco || []).length;
+
+  const bannerHtml = riscoCount > 0
+    ? `<div class="banner-status risco" id="banner-risco-pa" title="Clique para ver detalhes por PA"><span class="ponto"></span>
+        <span><b>${riscoCount} PA${riscoCount > 1 ? 's' : ''}</b> acima de ${d.limite_alerta_pct_falta}% de falta de bipagem: ${d.pas_em_risco.map(pa => pa.toUpperCase()).join(', ')}</span>
+      </div>`
+    : `<div class="banner-status"><span class="ponto"></span><span>Todas as PAs dentro da meta de bipagem (≤ ${d.limite_alerta_pct_falta}%).</span></div>`;
+
+  ultimoComparativoSemanal = d.comparativo_semanal || null;
+  const temComparativoSemanal = ultimoComparativoSemanal && ultimoComparativoSemanal.disponivel && ultimoComparativoSemanal.semana_anterior;
+  const btnSemanalHtml = temComparativoSemanal
+    ? `<button class="btn-pill" id="btn-comparativo-semanal">📊 Comparativo Semanal</button>`
+    : '';
+
+  main.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">${btnSemanalHtml}${seletorDataHtml}${seletorPaHtml}</div>
+    ${bannerHtml}
+    <div class="kpis">
+      <div class="kpi blue"><div class="label">Pacotes Coletados<span class="cn">集</span></div><div class="value">${formatNum(tg.pacotes_coletados)}</div>${deltaHtml(tg.variacao_pacotes_pct, '%', true)}</div>
+      <div class="kpi yellow"><div class="label">Sem Bip de Coleta<span class="cn">未收件</span></div><div class="value">${formatNum(tg.nao_coletados)}</div>${deltaHtml(tg.variacao_nao_coletados_pct, '%', false)}</div>
+      <div class="kpi kpi-clicavel" id="card-pct-falta" title="Clique para ver detalhes por PA"><div class="label">% Falta de Bipagem<span class="cn">未扫率</span></div><div class="value yellow-text">${tg.pct_falta_bipagem.toFixed(2)}%</div>${deltaHtml(tg.variacao_pct_falta_pp, ' p.p.', false)}</div>
+      <div class="kpi"><div class="label">CLT<span class="cn">交联层析法</span></div><div class="value">${formatNum(tg.clt)}</div></div>
+      <div class="kpi"><div class="label">Diaristas<span class="cn">日记工作者</span></div><div class="value">${formatNum(tg.diaristas)}</div></div>
+      <div class="kpi"><div class="label">Total HC<span class="cn">总HC</span></div><div class="value">${formatNum(tg.total_hc)}</div></div>
+      <div class="kpi green"><div class="label">Eficiência<span class="cn">效率</span></div><div class="value">${tg.eficiencia !== null ? formatNum(tg.eficiencia) : '—'}</div></div>
+      <div class="kpi"><div class="label">Custo CLT<span class="cn">中心性地心引力成本</span></div><div class="value mono" style="font-size:20px">R$ ${formatNum(tg.custo_clt)}</div></div>
+      <div class="kpi"><div class="label">Custo Diarista<span class="cn">每日工人成本</span></div><div class="value mono" style="font-size:20px">R$ ${formatNum(tg.custo_diarista)}</div></div>
+      <div class="kpi"><div class="label">Custo Total<span class="cn">总成本</span></div><div class="value mono" style="font-size:20px">R$ ${formatNum(tg.custo_total)}</div></div>
+      <div class="kpi"><div class="label">Custo Mão de Obra Pacote<span class="cn">人工成本（套餐）</span></div><div class="value mono" style="font-size:20px">R$ ${tg.custo_por_pacote.toFixed(2)}</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="panel"><h2>Pacotes Coletados por PA<span class="cn">按基地揽收量</span></h2><div style="position:relative; height:${Math.max(320, d.linhas.length * 30)}px"><canvas id="chart-pa-pacotes" height="${Math.max(320, d.linhas.length * 30)}" style="max-height:none"></canvas></div></div>
+      <div class="panel"><h2>Eficiência por PA (Pacotes ÷ HC)<span class="cn">效率</span></h2><div style="position:relative; height:${Math.max(320, d.linhas.length * 30)}px"><canvas id="chart-pa-eficiencia" height="${Math.max(320, d.linhas.length * 30)}" style="max-height:none"></canvas></div></div>
+    </div>
+    <div class="panel"><h2>Custo Total por PA<span class="cn">总成本</span></h2><div style="position:relative; height:${Math.max(320, d.linhas.length * 30)}px"><canvas id="chart-pa-custo" height="${Math.max(320, d.linhas.length * 30)}" style="max-height:none"></canvas></div></div>
+
+    <div class="panel">
+      <h2>Demanda Coletada — Detalhamento por PA</h2>
+      <div class="tabela-scroll">
+        <table>
+          <thead><tr>
+            <th>PA's<span class="cn">基地</span></th>
+            <th>Líder<span class="cn">领导</span></th>
+            <th style="text-align:right">Coletado<span class="cn">集</span></th>
+            <th style="text-align:right">Sem Bip de Coleta<span class="cn">未收件</span></th>
+            <th style="text-align:right">% Falta Bip.<span class="cn">未扫率</span></th>
+            <th style="text-align:right">CLT<span class="cn">交联层析法</span></th>
+            <th style="text-align:right">Diaristas<span class="cn">日记工作者</span></th>
+            <th style="text-align:right">Total HC<span class="cn">总HC</span></th>
+            <th style="text-align:right">Eficiência<span class="cn">效率</span></th>
+            <th style="text-align:right">Custos CLT<span class="cn">中心性</span></th>
+            <th style="text-align:right">Custos Diarista<span class="cn">每日</span></th>
+            <th style="text-align:right">Custos Total<span class="cn">总成本</span></th>
+            <th style="text-align:right">Custo Mão de Obra Pacote<span class="cn">人工成本</span></th>
+          </tr></thead>
+          <tbody>${linhasTabela}</tbody>
+          <tfoot><tr style="background:var(--surface-2)">
+            <td><b>TOTAL GERAL 总计</b></td>
+            <td></td>
+            <td class="num"><b>${formatNum(tg.pacotes_coletados)}</b></td>
+            <td class="num"><b><span class="pendente-badge">${formatNum(tg.nao_coletados)}</span></b></td>
+            <td class="num"><b>${tg.pct_falta_bipagem.toFixed(2)}%</b></td>
+            <td class="num"><b>${formatNum(tg.clt)}</b></td>
+            <td class="num"><b>${formatNum(tg.diaristas)}</b></td>
+            <td class="num"><b>${formatNum(tg.total_hc)}</b></td>
+            <td class="num"><b>${tg.eficiencia !== null ? formatNum(tg.eficiencia) : '—'}</b></td>
+            <td class="num">R$ ${formatNum(tg.custo_clt)}</td>
+            <td class="num">R$ ${formatNum(tg.custo_diarista)}</td>
+            <td class="num"><b>R$ ${formatNum(tg.custo_total)}</b></td>
+            <td class="num"><b>R$ ${tg.custo_por_pacote.toFixed(2)}</b></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="kpis" style="margin-top:16px">
+      <div class="kpi previsao">
+        <div class="label">Previsão de Coletas (Amanhã)<span class="cn">明日预测量</span></div>
+        <div class="value">${formatNum(tg.previsao_coletas)}</div>
+        <div class="sub">Baseado no dia anterior × 110%</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('seletor-pa-kpi').addEventListener('change', (e) => {
+    paSelecionada = e.target.value || null;
+    atualizarConteudo();
+  });
+
+  const seletor = document.getElementById('seletor-data-pa');
+  seletor.innerHTML = `<option value="todos" ${d.data_selecionada === 'todos' ? 'selected' : ''}>— Todos os dias (somado) —</option>` +
+    d.datas_disponiveis.map(dt =>
+      `<option value="${dt}" ${dt === d.data_selecionada ? 'selected' : ''}>${dt}</option>`).join('');
+  seletor.addEventListener('change', (e) => {
+    dataSelecionadaManualmente = e.target.value;
+    atualizarConteudo();
+  });
+
+  // Card % Falta de Bipagem e banner de risco — abrem o mesmo modal de detalhe
+  const cardFalta = document.getElementById('card-pct-falta');
+  if (cardFalta) cardFalta.addEventListener('click', abrirModalFaltaBipagem);
+  const bannerRisco = document.getElementById('banner-risco-pa');
+  if (bannerRisco) bannerRisco.addEventListener('click', abrirModalFaltaBipagem);
+
+  const btnSemanal = document.getElementById('btn-comparativo-semanal');
+  if (btnSemanal) btnSemanal.addEventListener('click', abrirModalComparativoSemanal);
+
+  const labelsPA = d.linhas.map((l, i) => `${i + 1}. ${(l.pa || '').toUpperCase()}`);
+
+  destruirCharts();
+  charts.paPacotes = new Chart(document.getElementById('chart-pa-pacotes'), {
+    type: 'bar',
+    data: { labels: labelsPA, datasets: [{ data: d.linhas.map(l => l.pacotes_coletados), backgroundColor: CORES.verde, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'end',
+          color: CORES.texto, font: { size: 11, weight: '600' },
+          formatter: v => formatNum(v)
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+
+  charts.paEficiencia = new Chart(document.getElementById('chart-pa-eficiencia'), {
+    type: 'bar',
+    data: { labels: labelsPA, datasets: [{ data: d.linhas.map(l => l.eficiencia || 0), backgroundColor: CORES.verde, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'end',
+          color: CORES.texto, font: { size: 11, weight: '600' },
+          formatter: v => formatNum(v)
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+
+  charts.paCusto = new Chart(document.getElementById('chart-pa-custo'), {
+    type: 'bar',
+    data: { labels: labelsPA, datasets: [{ data: d.linhas.map(l => l.custo_total), backgroundColor: CORES.azul, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'end',
+          color: CORES.texto, font: { size: 11, weight: '600' },
+          formatter: v => `R$ ${formatNum(v)}`
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
+// ---------------------------------------------------------------
+// SEM BIPAGEM (relatório dedicado com KPIs de não bipagem por PA)
+// ---------------------------------------------------------------
+function renderSemBipagem(d) {
+  const main = document.getElementById('main-content');
+  if (d.erro) { main.innerHTML = `<div class="empty-state"><h2>Erro</h2><p>${d.erro}</p></div>`; return; }
+  if (d.sem_dados || !d.linhas || d.linhas.length === 0) {
+    main.innerHTML = `
+      <div class="empty-state">
+        <h2>Sem dados ainda<span class="cn">暂无数据</span></h2>
+        <p>Salve um arquivo com "Sem_Coleta" no nome na pasta configurada.</p>
+      </div>`;
+    return;
+  }
+
+  const t = d.totais;
+
+  const opcoesPA = `<option value="">— Todas as PAs —</option>` +
+    (d.pas_disponiveis || []).map(pa =>
+      `<option value="${pa}" ${pa === paSelecionada ? 'selected' : ''}>${pa.toUpperCase()}</option>`).join('');
+  const seletorPaHtml = `<select id="seletor-pa-bip">${opcoesPA}</select>`;
+
+  const seletorDataHtml = d.datas_disponiveis && d.datas_disponiveis.length > 0
+    ? `<select id="seletor-data-bip"><option value="todos" ${d.data_selecionada === 'todos' ? 'selected' : ''}>— Todas as datas —</option>${d.datas_disponiveis.map(dt =>
+        `<option value="${dt}" ${dt === d.data_selecionada ? 'selected' : ''}>${dt}</option>`).join('')}</select>`
+    : '';
+
+  // só mostra no gráfico as PAs com ocorrência > 0 (evita poluição visual)
+  const comOcorrencia = d.linhas.filter(l => l.nao_coletados > 0);
+  const paraGrafico = comOcorrencia.length > 0 ? comOcorrencia : d.linhas.slice(0, 10);
+
+  main.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;">${seletorDataHtml}${seletorPaHtml}</div>
+    <div class="kpis">
+      <div class="kpi yellow"><div class="label">Sem Bip de Coleta (Total)<span class="cn">未收件总数</span></div><div class="value">${formatNum(t.nao_coletados)}</div></div>
+      <div class="kpi"><div class="label">PAs no Relatório<span class="cn">基地数</span></div><div class="value">${formatNum(t.total_pas)}</div></div>
+      <div class="kpi blue"><div class="label">PAs com Ocorrência<span class="cn">有未收件的基地</span></div><div class="value">${formatNum(t.pas_com_ocorrencia)}</div></div>
+    </div>
+    <div class="panel"><h2>Não Coletados por PA<span class="cn">各基地未收件</span></h2><div style="position:relative; height:${Math.max(320, paraGrafico.length * 30)}px"><canvas id="chart-bip-coleta" height="${Math.max(320, paraGrafico.length * 30)}" style="max-height:none"></canvas></div></div>
+    <div class="panel">
+      <h2>Detalhamento por PA<span class="cn">各基地详情</span></h2>
+      <div class="tabela-scroll">
+        <table>
+          <thead><tr>
+            <th>#</th>
+            <th>PA<span class="cn">基地</span></th>
+            <th style="text-align:right">Não Coletados<span class="cn">未收件</span></th>
+          </tr></thead>
+          <tbody>
+            ${d.linhas.map((l, i) => `<tr>
+              <td class="num" style="color:var(--text-muted)">${i + 1}</td>
+              <td>${l.pa}</td>
+              <td class="num">${l.nao_coletados > 0 ? `<span class="pendente-badge">${formatNum(l.nao_coletados)}</span>` : formatNum(l.nao_coletados)}</td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot><tr style="background:var(--surface-2)">
+            <td></td>
+            <td><b>TOTAL 总计</b></td>
+            <td class="num"><b>${formatNum(t.nao_coletados)}</b></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+  `;
+
+  if (seletorDataHtml) {
+    document.getElementById('seletor-data-bip').addEventListener('change', (e) => {
+      dataSelecionadaManualmente = e.target.value || null;
+      atualizarConteudo();
+    });
+  }
+  document.getElementById('seletor-pa-bip').addEventListener('change', (e) => {
+    paSelecionada = e.target.value || null;
+    atualizarConteudo();
+  });
+
+  destruirCharts();
+  const labels = paraGrafico.map((l, i) => `${i + 1}. ${l.pa.toUpperCase()}`);
+  charts.bipColeta = new Chart(document.getElementById('chart-bip-coleta'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: paraGrafico.map(l => l.nao_coletados), backgroundColor: CORES.amarelo, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      scales: { x: { grid: { color: CORES.grid }, ticks: { color: CORES.cinza } }, y: { grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } } },
+      plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', color: CORES.rotulo, font: { size: 13, weight: '700', family: "'JetBrains Mono', 'Consolas', monospace" }, formatter: v => formatNum(v) } }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
+// ---------------------------------------------------------------
+// DIARISTAS (seção fixa com info do arquivo auxiliar)
+// ---------------------------------------------------------------
+function renderDiaristas(d) {
+  const main = document.getElementById('main-content');
+  if (!d || !d.diaristas) {
+    main.innerHTML = estadoCarregando();
+    return;
+  }
+  const info = d.diaristas;
+  if (!info.arquivo_carregado) {
+    main.innerHTML = `
+      <div class="empty-state">
+        <h2>Aguardando planilha de Diaristas<span class="cn">等待日记工作者文件</span></h2>
+        <p>Salve um arquivo com "Diarista" no nome na pasta configurada. Ele será lido automaticamente.</p>
+        <p style="margin-top:8px;font-size:12px;color:var(--text-muted)">Ex: <span class="mono">Diaristas_PA_BARUERI_01072026.xlsx</span></p>
+      </div>`;
+    return;
+  }
+  const linhas = Object.entries(info.por_pa).sort((a, b) => b[1] - a[1]);
+  main.innerHTML = `
+    <div class="kpis">
+      <div class="kpi blue"><div class="label">Total Diaristas<span class="cn">日记工作者总数</span></div><div class="value">${formatNum(info.total)}</div></div>
+      <div class="kpi"><div class="label">PAs com Diaristas<span class="cn">有日记工作者的基地</span></div><div class="value">${formatNum(linhas.length)}</div></div>
+    </div>
+    <div class="panel">
+      <h2>Diaristas por PA<span class="cn">各基地日记工作者</span></h2>
+      <div class="tabela-scroll">
+        <table>
+          <thead><tr><th>PA<span class="cn">基地</span></th><th style="text-align:right">Diaristas<span class="cn">日记工作者</span></th><th style="text-align:right">Custo do Dia<span class="cn">每日成本</span></th></tr></thead>
+          <tbody>${linhas.map(([pa, qtd]) => `<tr><td>${pa}</td><td class="num"><b>${formatNum(qtd)}</b></td><td class="num">R$ ${formatNum(qtd * 266)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr style="background:var(--surface-2)"><td><b>TOTAL 总计</b></td><td class="num"><b>${formatNum(info.total)}</b></td><td class="num"><b>R$ ${formatNum(info.total * 266)}</b></td></tr></tfoot>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------
+// MODAL — % Falta de Bipagem
+// ---------------------------------------------------------------
+let chartModal = null;
+
+async function abrirModalFaltaBipagem() {
+  document.getElementById('modal-falta').classList.add('aberto');
+  document.getElementById('modal-conteudo').innerHTML = estadoCarregando();
+
+  const params = new URLSearchParams();
+  if (dataSelecionadaManualmente) params.set('data', dataSelecionadaManualmente);
+  if (paSelecionada) params.set('pa', paSelecionada);
+
+  try {
+    const resp = await fetch(`/api/falta-bipagem-detalhe?${params.toString()}`);
+    const d = await resp.json();
+    if (d.erro) { document.getElementById('modal-conteudo').innerHTML = `<p style="color:var(--accent-red)">${d.erro}</p>`; return; }
+
+    const linhas = d.linhas || [];
+    if (chartModal) { chartModal.destroy(); chartModal = null; }
+
+    document.getElementById('modal-conteudo').innerHTML = `
+      <div class="kpis" style="margin-bottom:20px">
+        <div class="kpi blue"><div class="label">Coletados<span class="cn">集</span></div><div class="value">${formatNum(d.total_coletados)}</div></div>
+        <div class="kpi yellow"><div class="label">Sem Bip de Coleta<span class="cn">未收件</span></div><div class="value">${formatNum(d.total_sem_coleta)}</div></div>
+        <div class="kpi"><div class="label">% Falta Geral<span class="cn">总体未扫率</span></div><div class="value yellow-text">${d.pct_falta_total.toFixed(2)}%</div></div>
+      </div>
+      <div class="grid" style="margin-bottom:16px">
+        <div class="panel"><h2>% Falta por PA<span class="cn">各基地未扫率</span></h2><div style="position:relative; height:${Math.max(320, linhas.length * 30)}px"><canvas id="chart-modal-barra" height="${Math.max(320, linhas.length * 30)}" style="max-height:none"></canvas></div></div>
+      </div>
+      <div class="tabela-scroll" style="max-height:320px">
+        <table>
+          <thead><tr>
+            <th>#</th>
+            <th>PA<span class="cn">基地</span></th>
+            <th style="text-align:right">Coletados<span class="cn">集</span></th>
+            <th style="text-align:right">Sem Bip de Coleta<span class="cn">未收件</span></th>
+            <th style="text-align:right">Total<span class="cn">总计</span></th>
+            <th style="text-align:right">% Falta<span class="cn">未扫率</span></th>
+          </tr></thead>
+          <tbody>${linhas.map((l, i) => `<tr>
+            <td class="num" style="color:var(--text-muted)">${i + 1}</td>
+            <td>${l.pa}</td>
+            <td class="num">${formatNum(l.coletados)}</td>
+            <td class="num"><span class="pendente-badge">${formatNum(l.sem_coleta)}</span></td>
+            <td class="num">${formatNum(l.total)}</td>
+            <td class="num"><b>${l.pct_falta.toFixed(2)}%</b></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    `;
+
+    const labelsPA = linhas.map((l, i) => `${i + 1}. ${l.pa.toUpperCase()}`);
+    chartModal = new Chart(document.getElementById('chart-modal-barra'), {
+      type: 'bar',
+      data: {
+        labels: labelsPA,
+        datasets: [
+          { label: 'Não Coletado', data: linhas.map(l => l.sem_coleta), backgroundColor: CORES.amarelo, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 },
+          { label: 'Coletado', data: linhas.map(l => l.coletados), backgroundColor: CORES.verde, borderRadius: 4, categoryPercentage: 0.9, barPercentage: 0.9 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        scales: {
+          x: { stacked: true, grid: { color: CORES.grid }, ticks: { color: CORES.cinza } },
+          y: { stacked: true, grid: { display: false }, ticks: { color: CORES.texto, autoSkip: false } }
+        },
+        plugins: { legend: { labels: { color: CORES.cinza } } }
+      }
+    });
+  } catch (e) {
+    document.getElementById('modal-conteudo').innerHTML = `<p style="color:var(--accent-red)">Erro ao carregar: ${e.message}</p>`;
+  }
+}
+
+document.getElementById('modal-fechar').addEventListener('click', () => {
+  document.getElementById('modal-falta').classList.remove('aberto');
+  if (chartModal) { chartModal.destroy(); chartModal = null; }
+});
+document.getElementById('modal-falta').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal-falta')) {
+    document.getElementById('modal-falta').classList.remove('aberto');
+    if (chartModal) { chartModal.destroy(); chartModal = null; }
+  }
+});
+
+// ---------------------------------------------------------------
+// MODAL — Comparativo Semanal (dados já vêm no /api/kpis-pa, sem fetch extra)
+// ---------------------------------------------------------------
+function abrirModalComparativoSemanal() {
+  const cs = ultimoComparativoSemanal;
+  const conteudo = document.getElementById('modal-semanal-conteudo');
+  if (!cs || !cs.disponivel || !cs.semana_anterior) {
+    conteudo.innerHTML = `<div class="empty-state"><h2>Sem semana anterior pra comparar ainda</h2><p>Precisa de pelo menos um dia de histórico na semana passada.</p></div>`;
+  } else {
+    conteudo.innerHTML = `
+      <div class="kpis" style="margin-bottom:0">
+        <div class="kpi blue">
+          <div class="label">Coletados — Semana ${cs.semana_atual.rotulo}<span class="cn">本周集</span></div>
+          <div class="value">${formatNum(cs.semana_atual.coletados)}</div>
+          ${deltaHtml(cs.variacao_coletados_pct, '%', true, 'semana anterior')}
+          <div class="sub">Semana ${cs.semana_anterior.rotulo}: ${formatNum(cs.semana_anterior.coletados)}</div>
+        </div>
+        <div class="kpi yellow">
+          <div class="label">% Falta de Bipagem — Semana<span class="cn">本周未扫率</span></div>
+          <div class="value">${cs.semana_atual.pct_falta.toFixed(2)}%</div>
+          ${deltaHtml(cs.variacao_pct_falta_pp, ' p.p.', false, 'semana anterior')}
+          <div class="sub">Semana ${cs.semana_anterior.rotulo}: ${cs.semana_anterior.pct_falta.toFixed(2)}%</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Custo Total — Semana<span class="cn">本周总成本</span></div>
+          <div class="value mono" style="font-size:22px">R$ ${formatNum(cs.semana_atual.custo_total)}</div>
+          ${deltaHtml(cs.variacao_custo_pct, '%', false, 'semana anterior')}
+          <div class="sub">Semana ${cs.semana_anterior.rotulo}: R$ ${formatNum(cs.semana_anterior.custo_total)}</div>
+        </div>
+      </div>
+    `;
+  }
+  document.getElementById('modal-semanal').classList.add('aberto');
+}
+
+document.getElementById('modal-semanal-fechar').addEventListener('click', () => {
+  document.getElementById('modal-semanal').classList.remove('aberto');
+});
+document.getElementById('modal-semanal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal-semanal')) {
+    document.getElementById('modal-semanal').classList.remove('aberto');
+  }
+});
+
+function cssEscape(s) { return s.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+// ---------------------------------------------------------------
+// Orquestração
+// ---------------------------------------------------------------
+async function atualizarConteudo() {
+  if (timeoutId) clearTimeout(timeoutId);
+
+  if (!CHART_DISPONIVEL) {
+    document.getElementById('main-content').innerHTML = `
+      <div class="empty-state">
+        <h2>Biblioteca de gráficos bloqueada</h2>
+        <p>O navegador bloqueou o carregamento da biblioteca de gráficos (Chart.js), provavelmente por um recurso de privacidade/Tracking Prevention.</p>
+        <p style="margin-top:10px">No Edge: Configurações → Privacidade, pesquisa e serviços → Tracking Prevention → adicione uma exceção para este site, ou diminua o nível para "Básico". Depois, atualize a página (F5).</p>
+      </div>`;
+    return;
+  }
+
+  // Cada chamada pega um número próprio. Se, quando a resposta chegar,
+  // já tiver rolado outra chamada mais nova (auto-refresh cruzando com
+  // uma troca de filtro, por exemplo), essa resposta é descartada em vez
+  // de sobrescrever a tela com dado desatualizado/sem o filtro certo.
+  const minhaRequisicao = ++requisicaoAtual;
+
+  try {
+    if (TIPO_ATUAL === '__visao_geral__') {
+      const resp = await fetch('/api/visao-geral');
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      renderVisaoGeral(d);
+    } else if (TIPO_ATUAL === '__diaristas__') {
+      const resp = await fetch('/api/status-dados');
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      renderDiaristas(d);
+    } else if (TIPO_ATUAL === '__sem_coleta__') {
+      const params = new URLSearchParams();
+      if (dataSelecionadaManualmente) params.set('data', dataSelecionadaManualmente);
+      if (paSelecionada) params.set('pa', paSelecionada);
+      const resp = await fetch(`/api/sem-coleta?${params.toString()}`);
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      renderSemBipagem(d);
+    } else if (TIPO_ATUAL === '__kpis_pa__') {
+      const params = new URLSearchParams();
+      if (dataSelecionadaManualmente) params.set('data', dataSelecionadaManualmente);
+      if (paSelecionada) params.set('pa', paSelecionada);
+      const resp = await fetch(`/api/kpis-pa?${params.toString()}`);
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      renderKpisPA(d);
+    } else if (TIPO_ATUAL === '__colaboradores__') {
+      const params = new URLSearchParams();
+      if (colaboradorSelecionado) params.set('colaborador', colaboradorSelecionado);
+      if (dataSelecionadaManualmente) params.set('data', dataSelecionadaManualmente);
+      if (paSelecionada) params.set('pa', paSelecionada);
+      const resp = await fetch(`/api/colaboradores?${params.toString()}`);
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      renderColaboradores(d);
+    } else {
+      const params = new URLSearchParams();
+      if (dataSelecionadaManualmente) params.set('data', dataSelecionadaManualmente);
+      const resp = await fetch(`/api/dados/${TIPO_ATUAL}?${params.toString()}`);
+      const d = await resp.json();
+      if (minhaRequisicao !== requisicaoAtual) return;
+      if (d.tipo_view === 'bipagem_coleta') {
+        renderBipagemColeta(d);
+      } else {
+        renderGenerico(d, TIPO_ATUAL);
+      }
+    }
+  } catch (e) {
+    if (minhaRequisicao !== requisicaoAtual) return;
+    const ehFalhaDeRede = e instanceof TypeError && /fetch/i.test(e.message);
+    if (ehFalhaDeRede) {
+      document.getElementById('main-content').innerHTML = `<div class="empty-state"><h2>Não foi possível conectar ao servidor</h2><p>Verifique se o app.py está rodando.</p></div>`;
+    } else {
+      document.getElementById('main-content').innerHTML = `<div class="empty-state"><h2>Erro ao carregar</h2><p class="mono" style="font-size:12px">${e.message || e}</p><p style="margin-top:8px">Veja o console do navegador (F12) ou o arquivo logs/dashboard_*.log para mais detalhes.</p></div>`;
+    }
+    console.error(e);
+  }
+
+  if (minhaRequisicao === requisicaoAtual) {
+    timeoutId = setTimeout(atualizarConteudo, intervaloMs);
+  }
+}
+
+carregarSidebar().catch(() => {}).then(atualizarConteudo);
+</script>
+</body>
+</html>

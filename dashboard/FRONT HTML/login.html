@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - NovaRota Ops</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ff0000'/%3E%3Ctext x='16' y='22' font-family='Arial' font-size='16' font-weight='bold' fill='white' text-anchor='middle'%3ENR%3C/text%3E%3C/svg%3E">
+    <style>
+        /* 🎨 PALETA DE CORES PRINCIPAL */
+        :root {
+            --cor-fundo: #0a0a0c;
+            --cor-card: #141419;
+            --cor-marca: #ff0000;
+            --cor-texto-claro: #ffffff;
+            --cor-texto-mutado: #a0a0a5;
+            --cor-estrada: #1a1a22;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(255,0,0,0.08), transparent 40%),
+                linear-gradient(180deg, rgba(10,10,12,0.9), rgba(10,10,12,0.98));
+            background-color: var(--cor-fundo);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 🛣️ RODOVIA */
+        .background-road {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom,
+                transparent 46%,
+                var(--cor-estrada) 46%, var(--cor-estrada) 54%,
+                transparent 54%
+            );
+            z-index: 1;
+        }
+
+        .background-road::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 200%;
+            height: 2px;
+            background: repeating-linear-gradient(90deg,
+                var(--cor-marca) 0px, var(--cor-marca) 25px,
+                transparent 25px, transparent 50px
+            );
+            transform: translateY(-50%);
+            animation: moverEstrada 1.5s linear infinite;
+            opacity: 0.6;
+        }
+
+        @keyframes moverEstrada {
+            0% { transform: translate(0, -50%); }
+            100% { transform: translate(-50%, -50%); }
+        }
+
+        /* 🚚 CAMINHÃO */
+        .truck-animation {
+            position: absolute;
+            top: 51.5%;
+            left: 12%;
+            transform: translateY(-50%);
+            width: 130px;
+            height: 34px;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            /* Animação inicial de vibração */
+            animation: balancoCaminhao 0.4s ease-in-out infinite alternate;
+            transition: transform 0.3s ease;
+        }
+
+        .truck-body {
+            width: 95px;
+            height: 100%;
+            background: var(--cor-marca);
+            border-radius: 4px 0 0 4px;
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        .truck-body::after {
+            content: 'NR';
+            position: absolute;
+            color: var(--cor-texto-claro);
+            font-size: 11px;
+            font-weight: 900;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            letter-spacing: 1px;
+        }
+
+        .truck-cabin {
+            width: 25px;
+            height: 24px;
+            background: var(--cor-texto-claro);
+            border-radius: 0 6px 6px 0;
+            border-left: 3px solid var(--cor-marca);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        @keyframes balancoCaminhao {
+            0% { transform: translateY(-53%); }
+            100% { transform: translateY(-47%); }
+        }
+
+        /* 🚀 Caminhão partindo após o login bem-sucedido */
+        .truck-animation.arrancar {
+            animation: dispararCaminhao 1.5s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+        }
+
+        @keyframes dispararCaminhao {
+            0% {
+                left: 12%;
+            }
+            15% {
+                /* Recua levemente para dar efeito físico de arrancada */
+                left: 9%;
+            }
+            100% {
+                /* Sai completamente pela direita da tela */
+                left: 110%;
+            }
+        }
+
+        /* 🪟 TELA DE LOGIN */
+        .login-card {
+            position: relative;
+            z-index: 10;
+            background: rgba(20, 20, 25, 0.85);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+            padding: 45px 40px;
+            border-radius: 14px;
+            width: 320px;
+            text-align: center;
+            transition: all 0.5s ease;
+        }
+
+        /* Efeito de sumir com o card de login enquanto o caminhão corre */
+        .login-card.ocultar {
+            opacity: 0;
+            transform: scale(0.9);
+            pointer-events: none;
+        }
+
+        .logo-mark {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            color: var(--cor-marca);
+            margin-bottom: 16px;
+        }
+
+        .title {
+            color: var(--cor-texto-claro);
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 35px;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            opacity: 0.9;
+        }
+
+        .erro-login {
+            background: #4A0A10;
+            color: #FF8A8A;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 13px;
+            margin-bottom: 18px;
+            text-align: left;
+        }
+
+        .input-box {
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .input-box label {
+            color: var(--cor-texto-mutado);
+            font-size: 11px;
+            display: block;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .input-box input {
+            width: 100%;
+            padding: 13px;
+            background: #0d0d11;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: var(--cor-texto-claro);
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        .input-box input:focus {
+            border-color: var(--cor-marca);
+            background: #121216;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.25);
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: var(--cor-marca);
+            border: none;
+            border-radius: 6px;
+            color: var(--cor-texto-claro);
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .btn-submit:hover {
+            background: #d60000;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.45);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="background-road"></div>
+
+    <div class="truck-animation" id="caminhao">
+        <div class="truck-body"></div>
+        <div class="truck-cabin"></div>
+    </div>
+
+    <div class="login-card" id="cardLogin">
+        <div class="logo">
+            <div class="logo-mark">NOVAROTA</div>
+        </div>
+        <div class="title">NovaRota Ops</div>
+
+        {% if erro %}<div class="erro-login" id="erroLogin">{{ erro }}</div>{% endif %}
+
+        <form id="formLogin" method="post" action="{{ url_for('auth.login') }}">
+            <div class="input-box">
+                <label for="usuario">Login</label>
+                <input type="text" id="usuario" name="usuario" placeholder="Digite seu usuário" autocomplete="username" required autofocus>
+            </div>
+            <div class="input-box">
+                <label for="senha">Senha</label>
+                <input type="password" id="senha" name="senha" placeholder="••••••••••••" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn-submit" id="btnEntrar">Entrar</button>
+        </form>
+    </div>
+
+    <!-- 🕹️ JAVASCRIPT DE TRANSIÇÃO -->
+    <script>
+        document.getElementById('formLogin').addEventListener('submit', async function (event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const caminhao = document.getElementById('caminhao');
+            const cardLogin = document.getElementById('cardLogin');
+            const botao = document.getElementById('btnEntrar');
+            botao.disabled = true;
+
+            try {
+                const resposta = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+
+                if (resposta.redirected) {
+                    // Login certo: mostra a animação do caminhão e só então navega
+                    cardLogin.classList.add('ocultar');
+                    caminhao.classList.add('arrancar');
+                    setTimeout(function () {
+                        window.location.href = resposta.url;
+                    }, 1500);
+                } else {
+                    // Login errado: redesenha a página com o erro que o servidor devolveu
+                    const html = await resposta.text();
+                    document.open();
+                    document.write(html);
+                    document.close();
+                }
+            } catch (e) {
+                // Falha de rede/fetch: cai pro envio normal do formulário
+                botao.disabled = false;
+                form.submit();
+            }
+        });
+    </script>
+
+</body>
+</html>
