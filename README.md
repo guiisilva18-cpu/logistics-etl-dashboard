@@ -52,11 +52,6 @@ edita a planilha — não faz sentido bater no banco a cada refresh de 60s do
 navegador, multiplicado por aba/usuário. `mysql_source.py` cacheia por TTL
 e invalida na hora quando algo é escrito (ex: sincronização da planilha).
 
-**PA sem líder cadastrado entra num grupo "4 EM 1" em vez de sumir do
-ranking.** Descartar esses registros esconderia volume real da operação;
-agrupá-los mantém o total visível e sinaliza que faltam dados de
-liderança pra aquelas PAs.
-
 **Conexão MySQL persistente por thread.** O servidor (waitress, múltiplas
 threads) reaproveita uma conexão por thread em vez de abrir uma nova a
 cada consulta — abrir conexão pra cada request deixava cada tela do
@@ -85,8 +80,8 @@ python dashboard/app.py                 # abre http://localhost:8765
 
 Login de demonstração: **demo / demo1234**.
 
-Pra rodar contra o portal real (não incluso aqui), configure `pipeline/.env`
-com as credenciais do seu portal e rode `python pipeline/main.py`.
+Pra rodar contra o portal real, configure `pipeline/.env`
+com as credenciais do seu portal  ou acima e rode `python pipeline/main.py`.
 
 ## Stack
 
