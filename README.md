@@ -80,8 +80,22 @@ python dashboard/app.py                 # abre http://localhost:8765
 
 Login de demonstração: **demo / demo1234**.
 
-Pra rodar contra o portal real, configure `pipeline/.env`
-com as credenciais do seu portal  ou acima e rode `python pipeline/main.py`.
+Pra rodar contra o portal real, preencha `pipeline/.env` com as
+credenciais do seu portal (mesmo formato do `.env` acima) e rode
+`python pipeline/main.py`.
+
+## Testes
+
+```bash
+pip install -r dashboard/requirements.txt -r pipeline/requirements.txt
+pytest dashboard/tests/ -v
+```
+
+- `test_app_structure.py` — a fábrica Flask (`create_app`) sobe e a rota raiz responde 200.
+- `test_auth.py` — login/logout, hash de senha por usuário, sessão exigida nas rotas protegidas (inclusive resposta 401 em JSON pras rotas de API).
+- `test_permissoes.py` — cada perfil de usuário só acessa as telas liberadas pra ele, e o botão de acesso só aparece na UI pra quem tem permissão.
+- `test_dashboard_logic.py` — regra de negócio do cálculo de efetivo (usa quantidade de diarista, ignora quantidade de CLT).
+- `test_processar.py` — classificação/normalização de nome de arquivo e planilha (coleta vs. sem-coleta, fallback de slug, tratamento de `None`/`NaN`).
 
 ## Stack
 
