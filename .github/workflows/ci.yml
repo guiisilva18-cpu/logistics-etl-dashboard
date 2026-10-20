@@ -57,4 +57,7 @@ jobs:
 
       - name: Rodar testes
         working-directory: dashboard
-        run: pytest -v
+        # "python -m pytest" (não "pytest" direto): os testes importam
+        # "config"/"dashboard_logic"/"processar" como módulos de topo, e só
+        # "python -m" adiciona o diretório atual ao sys.path.
+        run: python -m pytest -v
