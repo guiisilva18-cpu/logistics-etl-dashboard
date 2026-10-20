@@ -1,5 +1,7 @@
 # Logistics ETL + Ops Dashboard
 
+[![CI](https://github.com/guiisilva18-cpu/logistics-etl-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/guiisilva18-cpu/logistics-etl-dashboard/actions/workflows/ci.yml)
+
 Pipeline diário (ETL) + dashboard operacional para monitoramento de coleta
 de encomendas em uma rede de pontos de apoio (PAs/hubs) de uma
 transportadora. Adaptado de um projeto que rodo em produção — nomes de
@@ -96,6 +98,12 @@ pytest dashboard/tests/ -v
 - `test_permissoes.py` — cada perfil de usuário só acessa as telas liberadas pra ele, e o botão de acesso só aparece na UI pra quem tem permissão.
 - `test_dashboard_logic.py` — regra de negócio do cálculo de efetivo (usa quantidade de diarista, ignora quantidade de CLT).
 - `test_processar.py` — classificação/normalização de nome de arquivo e planilha (coleta vs. sem-coleta, fallback de slug, tratamento de `None`/`NaN`).
+
+O [CI](.github/workflows/ci.yml) roda essa suíte a cada push/PR contra um
+MySQL de serviço do GitHub Actions, com o schema criado a partir de
+`pipeline/sql/create_tables.sql` + `dashboard/sql/create_tables_dashboard.sql`
+— os testes batem em banco de verdade (`dashboard_logic.py`/`TELAS/*`), não
+contra um dublê, então sem esse schema eles nem coletam.
 
 ## Stack
 

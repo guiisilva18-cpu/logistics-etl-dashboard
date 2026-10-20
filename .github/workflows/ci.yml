@@ -1,0 +1,60 @@
+name: CI
+
+# Suíte de testes de dashboard/ (TELAS/*, dashboard_logic.py, processar.py)
+# contra um MySQL de serviço do GitHub Actions, com o mesmo schema usado em
+# produção: pipeline/sql/create_tables.sql (dados_ponto_coleta, resumo_pa) +
+# dashboard/sql/create_tables_dashboard.sql (lideres_pa, diaristas_pa,
+# efetivo_clt_pa). Sem isso os testes nem coletam (config.py lê DB_HOST/etc.
+# direto de os.environ, sem fallback).
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: rotaweb_relatorios
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: rotaweb_relatorios
+      DB_USER: root
+      DB_PASSWORD: root
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r dashboard/requirements.txt pytest
+
+      - name: Criar schema no MySQL de serviço
+        run: |
+          mysql -h127.0.0.1 -uroot -proot rotaweb_relatorios < pipeline/sql/create_tables.sql
+          mysql -h127.0.0.1 -uroot -proot rotaweb_relatorios < dashboard/sql/create_tables_dashboard.sql
+
+      - name: Rodar testes
+        working-directory: dashboard
+        run: pytest -v
